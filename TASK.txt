@@ -226,72 +226,48 @@ ICMP is directly coupled with the IP Protocol.
 
 #11 - Describe in detail what is the path the packets follow since they leave the interface inside container1 until they reach the interface inside container2
 
-Linux bridge:  virtual implementation of a physical switch inside of the Linux kernel. It forwards traffic basing itself                    on MAC addresses, which are in turn discovered dynamically by inspecting traffic.
+Linux bridge(docker0):  virtual implementation of a physical switch inside of the Linux kernel. 
 
-Network namespace :  is an isolated network stack with its own collection of interfaces, routes and firewall rules. Network namespaces are used to provide isolation between processes, analog to regular namespaces They ensure that two containers, even if they are on the same host, won’t be able to communicate with each other unless explicitly configured to do so.
+Network namespace :  is an isolated network stack with its own collection of interfaces, routes and firewall rules. 
 
+Virtual ethernet devices or veth : are interface that act as connections between two network namespaces. They have a single interface in each namespace. 
 
-Creates a pair of veth.
-Moves one to the container namespace.
-Renames the container veth to eth0.
-Attaches the host veth to the docker0 bridge.
-Configure port forwarding in iptables.
+Iptables is a package filtering system, which acts as a layer 3/4 firewall and provide packet marking, masquerading and dropping features.
 
-Linux bridge
-Containers connected to the bridge with veth pairs
+The Bridge driver creates a Docker-managed Linux bridge on the Docker host. By default, all containers created on the same bridge can talk to each other.
+
+The Overlay driver creates an overlay network that may span over multiple Docker hosts. It uses both local Linux bridges and VXLAN to overlay inter-container communication over physical networks.
+
+When a docker container is created a veth pair is created. One veth is moved inside the container and renamed as eth0.
+Other veth is in host namespace.
+Attaches the host veth to the docker0 bridge. Port forwarding is configured in iptables.
 Each container gets its own IP and kernel networking namespace
 Containers can talk to each other and to the host via IP
-Outwards connectivity via IP forwarding and masquerading
-The bridge and containers use a private subnet
-
-    Each container has a separate network namespace. You can think of a network namespace as an instance of the entire networking stack: it contains network interfaces, it has it’s own iptables rules, it’s own routing table, ARP tables and so on.
-    Now, a container that is connected to the testnet overlay network, needs to have a network interface with an IP address inside testnet’s subnet — eth0. This is actually not an ordinary network interface (like eth0 in the host’s network namespace), but one end of a veth pair.
-    Veth pairs are virtual interfaces (meaning they do not represent a physical NIC) that are basically nothing more that FIFO queues. All the packets or frames that you put in one end, come out the other and vice versa. Veth pairs are used in this context as a channel to allow network traffic between a container’s network namespace and the network namespace of the overlay network - because traffic can not just cross namespaces.
-    When Docker creates a veth pair for each container, both ends are by default named vethsomething, but as it moves one end inside a container’s network namespace, it gets renamed to eth0 for convenient use by applications inside a container. It is actually not trivial to figure out which veth interface inside the overlay network’s namespace corresponds to a specific container’s eth0.
-    Wait, why does an overlay network have it’s own namespace? This is actually an elegant solution for providing isolation between networks. Traffic cannot travel between namespaces, remember? If we had all the host ends of the veth pairs and other components in the host’s network namespace, we would need some other mechanism to isolate traffic between the host and the overlay network and between different overlays.
-    The vxlan1 interface is another special interface (a lot of “special” stuff in an OS, where everything was supposed to be a file, eh?). 
-    It allows us to create a “tunnel” between two or more Docker hosts and send ethernet frames from a container on one host to a container running on another host by encapsulating the frames inside UDP packets on the host network.
-    By creating and configuring a VXLAN interface, you are telling the kernel to listen on UDP port 4789 in the host network namespace (although the vxlan1 interface is inside the overlay network’s namespace — weird, right?) for UDP datagrams containing VXLAN encapsulated ethernet frames from another host. The kernel then strips the VXLAN headers from these datagrams and sends the resulting frames out vxlan1 inside the overlay network’s namespace.
-    Sending frames into vxlan1 is the reverse of this process: the kernel adds encapsulation to the ethernet frames of the overlay network and sends them out as UDP datagrams from the host’s namespace. But how does it know to which Docker host should it send a particular frame? This is defined in the forwarding table of the bridge device br0.
-    A Linux bridge device is basically an ethernet switch implemented in software. Instead of cables, it has virtual network interfaces connected to it’s virtual ports. Inside an overlay network’s namespace, the br0 device acts as the glue that connects everything together — it allows traffic to flow between the virtual interfaces connected to it (the veth endpoints and vxlan1). 
-    Just like a physical switch, a bridge can learn the MAC addresses reachable from each of it’s ports by monitoring ARP replies or by having static forwarding table entries configured. We’ll have an in depth look into the bridge’s forwarding table a little bit later.
-
-A1 would determine that the target IP address is inside it’s own subnet (on the same LAN) and decide to send out an ethernet frame addressed directly to the destination. It looks inside it’s ARP cache if it already has the MAC address corresponding to the destination IP.
+Outwards connectivity via IP forwarding and masquerading.
+Just like a physical switch, a bridge can learn the MAC addresses reachable from each of it’s ports by monitoring ARP replies or by having static forwarding table entries configured.
+Suppose A1 container on host A wants to communicate with another container on the same host. A1 has the destination IP address.
+A1 would determine that the target IP address is inside it’s own subnet and decide to send out an ethernet frame addressed directly to the destination. It looks inside it’s ARP cache if it already has the MAC address corresponding to the destination IP.
 If it doesn’t find a corresponding MAC in the ARP cache, it sends out an ARP request (basically saying “Who has this IP, please respond”).
-This ARP request gets propagated through the veth pair to br0. Br0 floods it out all it’s virtual ports.
-Once the ARP request reaches an interface with the correct IP address, this interface will send out an ARP reply to the MAC address originating the ARP request. This ARP reply travels through br0 as well. Br0 “takes a note” of this ARP reply and the virtual port it entered from — it now knows that the MAC address sending the ARP reply must be reachable from that virtual port. It reconfigures it’s forwarding table to send all future frames destined to that MAC address out the virtual port, where the ARP reply came from.
-For our example (A1 initiating communication with B1), after the ARP exchange, br0 would know that the MAC 02:42:0a:00:00:03 is reachable from veth32.
+This ARP request gets propagated through the veth pair to docker0. Docker0 floods it out all it’s virtual ports.
+Once the ARP request reaches an interface with the correct IP address, this interface will send out an ARP reply to the MAC address originating the ARP request. This ARP reply travels through docker0 as well. Docker0 “takes a note” of this ARP reply and the virtual port it entered from — it now knows that the MAC address sending the ARP reply must be reachable from that virtual port. It reconfigures it’s forwarding table to send all future frames destined to that MAC address out the virtual port, where the ARP reply came from.
+For our example (A1 initiating communication with B1), after the ARP exchange, docker0 would know that the MAC 02:42:0a:00:00:03 is reachable from veth32.
+
 -----------------------------------------------------------------------------------------------------------------------------
 
 #12 - Imagine, container1 and container2 are in different VMs or servers. What do you think would change from what you described in #11?
 
-Managed common IP space at the container level
-Assigns /24 subnet to each host
-Inserts routes to each host /24 into the routing table of each host
-Main implementations
-Calico
-Flannel
-Romana
-Kuryr
 
-Overlay approach
-Encapsulates multiple networks over the physical networking
-UDP
-vxlan
-geneve
-GRE
-Connect containers to virtualnetworks
-Main projects
-Docker’s native overlay
-Flannel
-Weave
-Kuryr
-  OVS (OVN,Dragonflow)
-  MidoNet
-  PLUMgrid
-  
-For containers residing on remote Docker hosts, the vxlan1 interface will send out ARP replies on their behalf. Br0 “learns” from these ARP replies that it should forward frames destined for remote containers to vxlan1, that then carries out all the encapsulation and delivery magic to the correct remote hosts. How does it know which containers are on which Docker hosts? 
-This is defined in the forwarding table of vxlan1. Entries are updated in the forwarding tables of all vxlan1 interfaces (on all Docker hosts in an overlay network) whenever a container is created or removed. The exact details are beyond the scope of this post, we’ll just consider the entries managed by the Docker daemon.
+Overlay approach is used in Docker for communication between containers on different hosts.
+Encapsulates multiple networks over the physical networking.
+Overlay network has it’s own namespace to provide isolation.
+Vxlan interface is another special interface.
+It allows us to create a “tunnel” between two or more Docker hosts and send ethernet frames from a container on one host to a container running on another host by encapsulating the frames inside UDP packets on the host network.
+By creating and configuring a VXLAN interface, you are telling the kernel to listen on UDP port 4789 in the host network namespace for UDP datagrams containing VXLAN encapsulated ethernet frames from another host. The kernel then strips the VXLAN headers from these datagrams and sends the resulting frames out vxlan1 inside the overlay network’s namespace.
+Sending frames into vxlan1 is the reverse of this process: the kernel adds encapsulation to the ethernet frames of the overlay network and sends them out as UDP datagrams from the host’s namespace.
+For containers residing on remote Docker hosts, the vxlan1 interface sends out ARP replies on their behalf. 
+Docker0 “learns” from these ARP replies that it should forward frames destined for remote containers to vxlan1.  
+Which containers are on which Docker hosts is defined in the forwarding table of vxlan1.
+Entries are updated in the forwarding tables of all vxlan interfaces (on all Docker hosts in an overlay network) whenever a container is created or removed. 
 -----------------------------------------------------------------------------------------------------------------------------
 
 #13 - Push this file with the answers to your private github repository
