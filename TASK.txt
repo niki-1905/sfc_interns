@@ -13,10 +13,12 @@ https://wiki.opnfv.org/display/INF/Lab-as-a-Service+at+the+UNH-IOL
 
 Your username and password for the VPN were provided to you in the mail
 
-Setup OpenVPN client.
+1.Setup OpenVPN client.
+2.Download laas_opnfv.ovpn configuration file from https://wiki.opnfv.org/display/INF/Lab-as-a-Service+at+the+UNH-IOL.
+
 $ sudo apt-get install openvpn
-Download laas_opnfv.ovpn configuration file from https://wiki.opnfv.org/display/INF/Lab-as-a-Service+at+the+UNH-IOL.
 $ sudo openvpn /home/niki/Downloads/laas_opnfv.ovpn
+
 Authenticate using provided credentials.
 -----------------------------------------------------------------------------------------------------------------------------
 
@@ -33,17 +35,16 @@ Assymetric Key Cryptography/ Encryption can be used to achieve this.
 The keys are simply large numbers that have been paired together but are not identical (asymmetric). 
 One key in the pair can be shared with everyone; it is called the public key. 
 The other key in the pair is kept secret; it is called the private key. 
-One of the keys can be used to encrypt a message; the other key is used for decryption.
 
 After keypair generation, we copy the public key in source to the user account in the destination.
 Then we can connect to the destination from source using the private key of the key pair.
-The SSH service will verify the private key in the source to the copied pub key in the destination.
+The SSH service will verify the private key in the source to the copied public key in the destination.
 If both keys match, the connection will be established.
 
 Step 1: Generate a ssh key pair in source machine.
 
-The below command will generate a public/private rsa key pair in the server and both keys will be stored under .ssh folder in your home directory.
-The public key will be saved as “id_rsa.pub” and private key  as “id_rsa”.
+The below command will generate a public/private rsa key pair in the server.
+The public key will be saved as “id_rsa.pub” and private key  as “id_rsa” under .ssh folder in your home directory..
 
 $ ssh-keygen –t rsa       # Generates keys using RSA Algorithm
 
@@ -68,10 +69,10 @@ The key's randomart image is:
 |       .++*      |
 +----[SHA256]-----+
 
-Step 2: Copy the pub key to destination
+Step 2: Copy the public key to destination
 
 Now the public key has to be copied to the desired user account in the destination machine.
-The key has to added to a file named “authorized_keys” under ~/.ssh/authorized_keys in opnfv@10.10.100.21
+The key has to be added to a file named “authorized_keys” under ~/.ssh/authorized_keys in opnfv@10.10.100.21
 If the above path doesn’t exist, we have to create it manually.
 ssh opnfv@10.10.100.21 mkdir -p .ssh
 
@@ -91,7 +92,7 @@ set 600(rw——-) for authorized_keys file inside .ssh folder
 
 $ ssh opnfv@10.10.100.21 "chmod 700 .ssh; chmod 600 .ssh/authorized_keys"
 
-After correcting the permissions, now we’re able to establish passwordless ssh connection successfully.
+After correcting the permissions, we’re now able to establish passwordless ssh connection successfully.
 -------------------------------------------------------------------------------------------------------------------------
 
 #5 - ssh to your VM running in the server. The ip was provided in the mail
@@ -106,16 +107,16 @@ Here, ProxyCommand first is establishing an SSH connection to opnfv@10.10.100.21
 Once the connection to the opnfv server is established, we need to make the next hop to the root@192.168.122.4.
 The next part of ProxyCommand points STDIN at the target hostname and port using netcat.
 Netcat(aka nc) is a standard UNIX utility for reading from and writing to network connections. 
-STDOUT is also routed back for the return trip from the target host to the client’s machine, fulfilling the requirement for ProxyCommand to return response data on STDOUT
+STDOUT is also routed back for the return trip from the target host to the client’s machine, fulfilling the requirement for ProxyCommand to return response data on STDOUT.
 
 First, you’ll want to ensure you have public key authentication properly configured, both on the opnfv@10.10.100.21 server as well as the root@192.168.122.4
 
-1) The user enters ssh final on localhost. This launches the parent ssh process
+1) The user enters ssh on localhost. This launches the parent ssh process
 2) The parent ssh creates a child ssh with I/O redirected to pipes
 3) The child ssh creates a connection to opnfv@10.10.100.21.
 4) The sshd process on opnfv@10.10.100.21 creates a tcp connection to root@192.168.122.4:22
 5) An ssh channel is added to existing ssh connection between localhost and opnfv@10.10.100.21.
-6) Parent ssh writes the handshake data to the pipe, the child ssh reads it from the pipe, sends via the ssh channel to sshd on opnfv@10.10.100.21; sshd reads it and writes it to the socket connected to root@192.168.122.4. Similarly, the data is transmitted from root@192.168.122.4 to localhost
+6) Parent ssh writes the handshake data to the pipe, the child ssh reads it from the pipe, sends via the ssh channel to sshd on opnfv@10.10.100.21; sshd reads it and writes it to the socket connected to root@192.168.122.4. Similarly, the data is transmitted from root@192.168.122.4 to localhost.
 
 
 The ssh program on a host receives its configuration from either the command line or from configuration files ~/.ssh/config and /etc/ssh/ssh_config.
@@ -128,15 +129,15 @@ Append the following to the config file:
 Host host-a
   User opnfv                        #Defines the username for the SSH connection if different from local username
   Hostname 10.10.100.21             
-  #IdentityFile ~/.ssh/id_rsa1 ---if private key is in another file, can be added
+                                    #IdentityFile ~/.ssh/id_rsa1 ---if private key is in another file, can be added
   
 Host host-b
   User root                         #Defines the username for the SSH connection if different from local username 
   Hostname 192.168.122.4            
   ProxyCommand ssh host-a nc %h %p  #OR ProxyCommand ssh host-a -W %h:%p
   
-  #IdentityFile ~/.ssh/id_rsa2 ---if private key is in another file, can be added
-  # Port 22 default SSH port --can be added to override
+                                    #IdentityFile ~/.ssh/id_rsa2 ---if private key is in another file, can be added
+                                    # Port 22 default SSH port --can be added to override
 ------------------------------------------------------------------------------------------------------------------
 
 $ ssh-add <(ssh opnfv@10.10.100.21 'cat .ssh/id_rsa')
@@ -144,7 +145,7 @@ $ ssh host-b
 
 
 -W command is a command-line option for SSH that enables “netcat mode.” This option was added in OpenSSH 5.4.
-Earlier versions of SSH - use 'real' netcat (nc).
+Earlier versions of SSH - use netcat (nc).
 %h will be substituted by the host name to connect, %p by the port.
 
 Connected to VM successfully.
@@ -222,7 +223,7 @@ ICMP is directly coupled with the IP Protocol.
 
 
 
------------------------------------------------------------------------------------------------------------------------------
+----------------------------------------------------------------------------------------------------------------------------
 
 #11 - Describe in detail what is the path the packets follow since they leave the interface inside container1 until they reach the interface inside container2
 
@@ -234,40 +235,48 @@ Virtual ethernet devices or veth : are interface that act as connections between
 
 Iptables is a package filtering system, which acts as a layer 3/4 firewall and provide packet marking, masquerading and dropping features.
 
-The Bridge driver creates a Docker-managed Linux bridge on the Docker host. By default, all containers created on the same bridge can talk to each other.
-
-The Overlay driver creates an overlay network that may span over multiple Docker hosts. It uses both local Linux bridges and VXLAN to overlay inter-container communication over physical networks.
+Bridge driver creates a Docker-managed Linux bridge on the Docker host. By default, all containers created on the same bridge can talk to each other.
 
 When a docker container is created a veth pair is created. One veth is moved inside the container and renamed as eth0.
 Other veth is in host namespace.
 Attaches the host veth to the docker0 bridge. Port forwarding is configured in iptables.
-Each container gets its own IP and kernel networking namespace
-Containers can talk to each other and to the host via IP
+Each container gets its own IP from the created subnet.
+Containers can talk to each other and to the host via IP.
 Outwards connectivity via IP forwarding and masquerading.
 Just like a physical switch, a bridge can learn the MAC addresses reachable from each of it’s ports by monitoring ARP replies or by having static forwarding table entries configured.
-Suppose A1 container on host A wants to communicate with another container on the same host. A1 has the destination IP address.
+
+Suppose A1 container on host A wants to communicate with another container B1 on the same host. A1 has the destination IP address of B1.
 A1 would determine that the target IP address is inside it’s own subnet and decide to send out an ethernet frame addressed directly to the destination. It looks inside it’s ARP cache if it already has the MAC address corresponding to the destination IP.
 If it doesn’t find a corresponding MAC in the ARP cache, it sends out an ARP request (basically saying “Who has this IP, please respond”).
-This ARP request gets propagated through the veth pair to docker0. Docker0 floods it out all it’s virtual ports.
-Once the ARP request reaches an interface with the correct IP address, this interface will send out an ARP reply to the MAC address originating the ARP request. This ARP reply travels through docker0 as well. Docker0 “takes a note” of this ARP reply and the virtual port it entered from — it now knows that the MAC address sending the ARP reply must be reachable from that virtual port. It reconfigures it’s forwarding table to send all future frames destined to that MAC address out the virtual port, where the ARP reply came from.
-For our example (A1 initiating communication with B1), after the ARP exchange, docker0 would know that the MAC 02:42:0a:00:00:03 is reachable from veth32.
+This ARP request gets propagated through the veth pair to docker0. 
+Docker0 floods it out all it’s virtual ports.
+Once the ARP request reaches an interface with the correct IP address, this interface will send out an ARP reply to the MAC address originating the ARP request. 
+This ARP reply travels through docker0 as well. Docker0 “takes a note” of this ARP reply and the virtual port it entered from — it now knows that the MAC address sending the ARP reply must be reachable from that virtual port. 
+It reconfigures it’s forwarding table to send all future frames destined to that MAC address out the virtual port, where the ARP reply came from.
+For example (A1 initiating communication with B1), after the ARP exchange, docker0 would know that the MAC 02:42:0a:00:00:03 is reachable from veth32.
 
 -----------------------------------------------------------------------------------------------------------------------------
 
 #12 - Imagine, container1 and container2 are in different VMs or servers. What do you think would change from what you described in #11?
-
 
 Overlay approach is used in Docker for communication between containers on different hosts.
 Encapsulates multiple networks over the physical networking.
 Overlay network has it’s own namespace to provide isolation.
 Vxlan interface is another special interface.
 It allows us to create a “tunnel” between two or more Docker hosts and send ethernet frames from a container on one host to a container running on another host by encapsulating the frames inside UDP packets on the host network.
-By creating and configuring a VXLAN interface, you are telling the kernel to listen on UDP port 4789 in the host network namespace for UDP datagrams containing VXLAN encapsulated ethernet frames from another host. The kernel then strips the VXLAN headers from these datagrams and sends the resulting frames out vxlan1 inside the overlay network’s namespace.
-Sending frames into vxlan1 is the reverse of this process: the kernel adds encapsulation to the ethernet frames of the overlay network and sends them out as UDP datagrams from the host’s namespace.
+The Overlay driver creates an overlay network that may span over multiple Docker hosts. It uses both local Linux bridges and VXLAN to overlay inter-container communication over physical networks.
+
+Source Container creates a L2 frame destined for MAC address of destination host.
+The overlay network driver then encapsulates the frame with a VXLAN header, with the physical address of destination host, which he knows by knowing the state and location of every VXLAN tunnel endpoint through the control plane.
+The packet is then sent and routed as a normal packet using the physical network.
+Finally, the packet is received by destination host, decapsulated by the overlay network driver, and passed on to the above layer.
+
+By creating and configuring a VXLAN interface, you are telling the kernel to listen on UDP port 4789 in the host network namespace for UDP datagrams containing VXLAN encapsulated ethernet frames from another host. 
 For containers residing on remote Docker hosts, the vxlan1 interface sends out ARP replies on their behalf. 
 Docker0 “learns” from these ARP replies that it should forward frames destined for remote containers to vxlan1.  
 Which containers are on which Docker hosts is defined in the forwarding table of vxlan1.
 Entries are updated in the forwarding tables of all vxlan interfaces (on all Docker hosts in an overlay network) whenever a container is created or removed. 
+
 -----------------------------------------------------------------------------------------------------------------------------
 
 #13 - Push this file with the answers to your private github repository
