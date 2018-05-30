@@ -3,17 +3,28 @@ This is the list of tasks of the second phase of the recruitment process for the
 https://wiki.opnfv.org/display/DEV/Intern+Project%3A+kubernetes-sfc+scenario+investigation+and+prototype
 
 Here is the list of tasks:
+-----------------------------------------------------------------------------------------------------------------------------
 
 #1 - Create a github account (if you don't have one yet) and fork this repo. We would like you to write down the answers of the questions we ask in the forked version of this text file. If the task requires some practical exercises, we would like you to write every command you use
-
+-----------------------------------------------------------------------------------------------------------------------------
 #2 - Set up the VPN to connect to our lab. To do so, read the instructions in the next link under the section "Using the VPN":
 
 https://wiki.opnfv.org/display/INF/Lab-as-a-Service+at+the+UNH-IOL
 
 Your username and password for the VPN were provided to you in the mail
 
+Setup OpenVPN client.
+$ sudo apt-get install openvpn
+Download laas_opnfv.ovpn configuration file from https://wiki.opnfv.org/display/INF/Lab-as-a-Service+at+the+UNH-IOL.
+$ sudo openvpn /home/niki/Downloads/laas_opnfv.ovpn
+Authenticate using provided credentials.
+-----------------------------------------------------------------------------------------------------------------------------
+
 
 #3 - Connect to our server (10.10.100.21) using ssh with username opnfv and the same for password
+
+$ ssh opnfv@10.10.100.21
+Authenticate.
 -----------------------------------------------------------------------------------------------------------------------------
 
 #4 - How would you ssh our server without having to write the password? If you know a way, apart from briefly explaining how, please try to do it. HINT: Restarting the sshd process (ssh server) is not needed
@@ -34,7 +45,28 @@ Step 1: Generate a ssh key pair in source machine.
 The below command will generate a public/private rsa key pair in the server and both keys will be stored under .ssh folder in your home directory.
 The public key will be saved as “id_rsa.pub” and private key  as “id_rsa”.
 
-$ ssh-keygen –t rsa
+$ ssh-keygen –t rsa       # Generates keys using RSA Algorithm
+
+Generating public/private rsa key pair.
+Enter file in which to save the key (/home/niki/.ssh/id_rsa): 
+Enter passphrase (empty for no passphrase): 
+Enter same passphrase again: 
+Your identification has been saved in /home/niki/.ssh/id_rsa.
+Your public key has been saved in /home/niki/.ssh/id_rsa.pub.
+The key fingerprint is:
+SHA256:bOi9dgVBP+zyygme71UkmEKDTiY/aMfqTHQ1VantBdU niki@nikita-HP-ProBook-440-G1
+The key's randomart image is:
++---[RSA 2048]----+
+|       .ooo..o.. |
+|    . +.o..=o   E|
+|     O ...o+=..  |
+|    + Bo .o..+.  |
+|   o +..S .o...  |
+|    o. o   oo.   |
+|   +  . o  .o    |
+|    o  ..=.+     |
+|       .++*      |
++----[SHA256]-----+
 
 Step 2: Copy the pub key to destination
 
@@ -63,24 +95,81 @@ After correcting the permissions, now we’re able to establish passwordless ssh
 -------------------------------------------------------------------------------------------------------------------------
 
 #5 - ssh to your VM running in the server. The ip was provided in the mail
+$ ssh root@192.168.122.4
+
+-----------------------------------------------------------------------------------------------------------------------------
 
 #6 - How would you ssh directly from your computer to the VM without having to use ssh twice (one to connect to the server and another one to connect to the VM)? If you know a way, apart from briefly explaining how, please try to do it.
 
+This can be done by using ProxyCommand.
+The ssh program on a host receives its configuration from either the command line or from configuration files ~/.ssh/config and /etc/ssh/ssh_config.
+The SSH client communicates with the proxy command using its standard input and standard output, and the proxy command should pass the communication to an SSH server.
+
+SSH will connect to the gateway machine and run ‘nc’ to forward the SSH session to the internal machine.
+First, you’ll want to ensure you have public key authentication properly configured, both on the bastion host as well as the remote instances.
+
+1) The user enters ssh final on localhost. This launches the parent ssh process
+2) The parent ssh creates a child ssh with I/O redirected to pipes
+3) The child ssh creates a connection to bastion.com.
+4) The sshd process on bastion.com creates a tcp connection to final.com:22
+5) An ssh channel is added to existing ssh connection between localhost and bastion.com
+6) Parent ssh writes the handshake data to the pipe, the child ssh reads it from the pipe, sends via the ssh channel to sshd on bastion.com; sshd reads it and writes it to the socket connected to final.com. Similarly, the data is transmitted from final.com to localhost
+
+Specifies the command to use to connect to the server. The command string extends to the end of the line, and is executed with the user's shell
+should read from its standard input and write to its standard output. It should eventually connect an sshd(8) server running on some machine, or execute sshd -i somewhere. Host key management will be done using the HostName of the host being connected 
+
+SSH usually connects directly to a host and starts talking SSH protocol. The ProxyCommand instead will handle the connecting part. SSH executes ProxyCommand and pipes in its SSH protocol via STDIN. ProxyCommand then is responsible for shipping that data off to an SSH daemon somewhere, and returning response data to STDOUT. Note that %h and %p will be expanded to the target hostname and port, respectively.
+
+Here, ProxyCommand first is establishing an SSH connection to jump-host (ssh -q jump-user@jump-host). The -q flag puts that first SSH session in quiet mode so that warnings and diagnostic messages are suppressed. Once the connection to the jump host is established, we need to make the next hop to the target machine.
+
+The next part of ProxyCommand points STDIN at the target hostname and port using netcat (a.k.a nc), a standard UNIX utility for reading from and writing to network connections. STDOUT is also routed back for the return trip from the target host to the client’s machine, fulfilling the requirement for ProxyCommand to return response data on STDOUT.
+
+Edit the $HOME/.ssh/config file using a text editor such as vi, enter:
+$ vi ~/.ssh/config
+
+Append the following to the config file:
+Host host-a
+  User opnfv
+  Hostname 10.10.100.21             #IdentityFile ~/.ssh/id_rsa1 ---if private key is in another file
+  
+Host host-b
+  User root                         # Port 22 default SSH port
+  Hostname 192.168.122.4            #IdentityFile ~/.ssh/id_rsa2 ---if private key is in another file
+  ProxyCommand ssh host-a nc %h %p  #OR ProxyCommand ssh host-a -W %h:%p 
+
+$ ssh-add <(ssh opnfv@10.10.100.21 'cat .ssh/id_rsa')
+$ ssh host-b 
+
+-W command is a command-line option for SSH that enables “netcat mode.” This option was added in OpenSSH 5.4, released in March 2010.
+Earlier versions of SSH - use “real” netcat 
+‘%h’ will be substituted by the host name to connect, ‘%p’ by the port
+
+
+-----------------------------------------------------------------------------------------------------------------------------
+
 #7 - Install docker inside the VM
+-----------------------------------------------------------------------------------------------------------------------------
 
 #8 - Create 2 docker containers (use opensuse or ubuntu as their operating system) making sure that they don't stop when you leave them. From now on, we will call these containers: container1 and container2
+-----------------------------------------------------------------------------------------------------------------------------
 
 #9 - Make sure you can ping between both containers
+-----------------------------------------------------------------------------------------------------------------------------
 
 #10 - Explain what are the used networking protocols and the exchanged packets that appear in order for ping to be successful (e.g. container2 first sends a UDP packet with the IP of container 1...)
+-----------------------------------------------------------------------------------------------------------------------------
 
 #11 - Describe in detail what is the path the packets follow since they leave the interface inside container1 until they reach the interface inside container2
+-----------------------------------------------------------------------------------------------------------------------------
 
 #12 - Imagine, container1 and container2 are in different VMs or servers. What do you think would change from what you described in #11?
+-----------------------------------------------------------------------------------------------------------------------------
 
 #13 - Push this file with the answers to your private github repository
+-----------------------------------------------------------------------------------------------------------------------------
 
 #14 - Send an email to Dimitris and Manuel with a link to the document in your github repo
+-----------------------------------------------------------------------------------------------------------------------------
 
 
 Please contact Dimitris or Manuel if you get stuck in any of the steps
