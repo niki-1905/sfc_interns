@@ -12,9 +12,55 @@ https://wiki.opnfv.org/display/INF/Lab-as-a-Service+at+the+UNH-IOL
 
 Your username and password for the VPN were provided to you in the mail
 
+
 #3 - Connect to our server (10.10.100.21) using ssh with username opnfv and the same for password
+-----------------------------------------------------------------------------------------------------------------------------
 
 #4 - How would you ssh our server without having to write the password? If you know a way, apart from briefly explaining how, please try to do it. HINT: Restarting the sshd process (ssh server) is not needed
+
+Assymetric Key Cryptography/ Encryption can be used to achieve this.
+The keys are simply large numbers that have been paired together but are not identical (asymmetric). 
+One key in the pair can be shared with everyone; it is called the public key. 
+The other key in the pair is kept secret; it is called the private key. 
+One of the keys can be used to encrypt a message; the other key is used for decryption.
+
+After keypair generation, we copy the public key in source to the user account in the destination.
+Then we can connect to the destination from source using the private key of the key pair.
+The SSH service will verify the private key in the source to the copied pub key in the destination.
+If both keys match, the connection will be established.
+
+Step 1: Generate a ssh key pair in source machine.
+
+The below command will generate a public/private rsa key pair in the server and both keys will be stored under .ssh folder in your home directory.
+The public key will be saved as “id_rsa.pub” and private key  as “id_rsa”.
+
+$ ssh-keygen –t rsa
+
+Step 2: Copy the pub key to destination
+
+Now the public key has to be copied to the desired user account in the destination machine.
+The key has to added to a file named “authorized_keys” under ~/.ssh/authorized_keys in opnfv@10.10.100.21
+If the above path doesn’t exist, we have to create it manually.
+ssh opnfv@10.10.100.21 mkdir -p .ssh
+
+$ ssh-add
+$ ssh-copy-id opnfv@10.10.100.21
+  OR
+$ cat .ssh/id_rsa.pub | ssh opnfv@10.10.100.21 ssh root@192.168.122.4 'cat >> .ssh/authorized_keys'
+
+Step 3: Connect from source using private key to destination
+
+From source, run ssh username@destination. 
+By default, ssh will pick the ‘id_rsa” private key file located in .ssh folder of user’s home directory.
+
+If permission denied error for passwordless authentication arises,change permissions in destination.
+set 700 (rwx——) for .ssh folder
+set 600(rw——-) for authorized_keys file inside .ssh folder
+
+$ ssh opnfv@10.10.100.21 "chmod 700 .ssh; chmod 600 .ssh/authorized_keys"
+
+After correcting the permissions, now we’re able to establish passwordless ssh connection successfully.
+-------------------------------------------------------------------------------------------------------------------------
 
 #5 - ssh to your VM running in the server. The ip was provided in the mail
 
