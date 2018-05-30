@@ -25,7 +25,7 @@ Authenticate using provided credentials.
 
 $ ssh opnfv@10.10.100.21
 Authenticate.
------------------------------------------------------------------------------------------------------------------------------
+----------------------------------------------------------------------------------------------------------------------------
 
 #4 - How would you ssh our server without having to write the password? If you know a way, apart from briefly explaining how, please try to do it. HINT: Restarting the sshd process (ssh server) is not needed
 
@@ -102,67 +102,196 @@ $ ssh root@192.168.122.4
 #6 - How would you ssh directly from your computer to the VM without having to use ssh twice (one to connect to the server and another one to connect to the VM)? If you know a way, apart from briefly explaining how, please try to do it.
 
 This can be done by using ProxyCommand.
-The ssh program on a host receives its configuration from either the command line or from configuration files ~/.ssh/config and /etc/ssh/ssh_config.
-The SSH client communicates with the proxy command using its standard input and standard output, and the proxy command should pass the communication to an SSH server.
+Here, ProxyCommand first is establishing an SSH connection to opnfv@10.10.100.21.  
+Once the connection to the opnfv server is established, we need to make the next hop to the root@192.168.122.4.
+The next part of ProxyCommand points STDIN at the target hostname and port using netcat.
+Netcat(aka nc) is a standard UNIX utility for reading from and writing to network connections. 
+STDOUT is also routed back for the return trip from the target host to the client’s machine, fulfilling the requirement for ProxyCommand to return response data on STDOUT
 
-SSH will connect to the gateway machine and run ‘nc’ to forward the SSH session to the internal machine.
-First, you’ll want to ensure you have public key authentication properly configured, both on the bastion host as well as the remote instances.
+First, you’ll want to ensure you have public key authentication properly configured, both on the opnfv@10.10.100.21 server as well as the root@192.168.122.4
 
 1) The user enters ssh final on localhost. This launches the parent ssh process
 2) The parent ssh creates a child ssh with I/O redirected to pipes
-3) The child ssh creates a connection to bastion.com.
-4) The sshd process on bastion.com creates a tcp connection to final.com:22
-5) An ssh channel is added to existing ssh connection between localhost and bastion.com
-6) Parent ssh writes the handshake data to the pipe, the child ssh reads it from the pipe, sends via the ssh channel to sshd on bastion.com; sshd reads it and writes it to the socket connected to final.com. Similarly, the data is transmitted from final.com to localhost
+3) The child ssh creates a connection to opnfv@10.10.100.21.
+4) The sshd process on opnfv@10.10.100.21 creates a tcp connection to root@192.168.122.4:22
+5) An ssh channel is added to existing ssh connection between localhost and opnfv@10.10.100.21.
+6) Parent ssh writes the handshake data to the pipe, the child ssh reads it from the pipe, sends via the ssh channel to sshd on opnfv@10.10.100.21; sshd reads it and writes it to the socket connected to root@192.168.122.4. Similarly, the data is transmitted from root@192.168.122.4 to localhost
 
-Specifies the command to use to connect to the server. The command string extends to the end of the line, and is executed with the user's shell
-should read from its standard input and write to its standard output. It should eventually connect an sshd(8) server running on some machine, or execute sshd -i somewhere. Host key management will be done using the HostName of the host being connected 
 
-SSH usually connects directly to a host and starts talking SSH protocol. The ProxyCommand instead will handle the connecting part. SSH executes ProxyCommand and pipes in its SSH protocol via STDIN. ProxyCommand then is responsible for shipping that data off to an SSH daemon somewhere, and returning response data to STDOUT. Note that %h and %p will be expanded to the target hostname and port, respectively.
-
-Here, ProxyCommand first is establishing an SSH connection to jump-host (ssh -q jump-user@jump-host). The -q flag puts that first SSH session in quiet mode so that warnings and diagnostic messages are suppressed. Once the connection to the jump host is established, we need to make the next hop to the target machine.
-
-The next part of ProxyCommand points STDIN at the target hostname and port using netcat (a.k.a nc), a standard UNIX utility for reading from and writing to network connections. STDOUT is also routed back for the return trip from the target host to the client’s machine, fulfilling the requirement for ProxyCommand to return response data on STDOUT.
+The ssh program on a host receives its configuration from either the command line or from configuration files ~/.ssh/config and /etc/ssh/ssh_config.
 
 Edit the $HOME/.ssh/config file using a text editor such as vi, enter:
 $ vi ~/.ssh/config
 
 Append the following to the config file:
+------------------------------------------------------------------------------------------------------------------
 Host host-a
-  User opnfv
-  Hostname 10.10.100.21             #IdentityFile ~/.ssh/id_rsa1 ---if private key is in another file
+  User opnfv                        #Defines the username for the SSH connection if different from local username
+  Hostname 10.10.100.21             
+  #IdentityFile ~/.ssh/id_rsa1 ---if private key is in another file, can be added
   
 Host host-b
-  User root                         # Port 22 default SSH port
-  Hostname 192.168.122.4            #IdentityFile ~/.ssh/id_rsa2 ---if private key is in another file
-  ProxyCommand ssh host-a nc %h %p  #OR ProxyCommand ssh host-a -W %h:%p 
+  User root                         #Defines the username for the SSH connection if different from local username 
+  Hostname 192.168.122.4            
+  ProxyCommand ssh host-a nc %h %p  #OR ProxyCommand ssh host-a -W %h:%p
+  
+  #IdentityFile ~/.ssh/id_rsa2 ---if private key is in another file, can be added
+  # Port 22 default SSH port --can be added to override
+------------------------------------------------------------------------------------------------------------------
 
 $ ssh-add <(ssh opnfv@10.10.100.21 'cat .ssh/id_rsa')
 $ ssh host-b 
 
--W command is a command-line option for SSH that enables “netcat mode.” This option was added in OpenSSH 5.4, released in March 2010.
-Earlier versions of SSH - use “real” netcat 
-‘%h’ will be substituted by the host name to connect, ‘%p’ by the port
 
+-W command is a command-line option for SSH that enables “netcat mode.” This option was added in OpenSSH 5.4.
+Earlier versions of SSH - use 'real' netcat (nc).
+%h will be substituted by the host name to connect, %p by the port.
 
+Connected to VM successfully.
 -----------------------------------------------------------------------------------------------------------------------------
 
 #7 - Install docker inside the VM
+
+$ sudo apt-get update
+$ sudo apt-get install \
+    apt-transport-https \
+    ca-certificates \
+    curl \
+    software-properties-common
+$ curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo apt-key add -
+$ sudo apt-key fingerprint 0EBFCD88
+$ sudo add-apt-repository \
+   "deb [arch=amd64] https://download.docker.com/linux/ubuntu \
+   $(lsb_release -cs) \
+   stable"
+$ sudo apt-get update
+$ sudo apt-get install docker-ce
+$ sudo docker run hello-world       #check whether docker is properly installed.
+
+
 -----------------------------------------------------------------------------------------------------------------------------
 
 #8 - Create 2 docker containers (use opensuse or ubuntu as their operating system) making sure that they don't stop when you leave them. From now on, we will call these containers: container1 and container2
+
+$ docker run -td --name container1 ubuntu
+$ docker run -td --name container2 ubuntu     #running in detached mode
+
 -----------------------------------------------------------------------------------------------------------------------------
 
 #9 - Make sure you can ping between both containers
+
+Finding the ip addresses of containers
+As they are connected to the default bridge network they can communicate with each other.
+
+$ docker inspect -f '{{ .NetworkSettings.IPAddress }}' container1   # 172.17.0.2
+$ docker inspect -f '{{ .NetworkSettings.IPAddress }}' container2   # 172.17.0.3
+
+$ docker container exec -it container1 bash
+# apt-get update
+# apt-get install iputils-ping
+# ping 172.17.0.3
+
 -----------------------------------------------------------------------------------------------------------------------------
 
 #10 - Explain what are the used networking protocols and the exchanged packets that appear in order for ping to be successful (e.g. container2 first sends a UDP packet with the IP of container 1...)
+
+"No.","Time","Source","Destination","Protocol","Length","Info"
+"1","0.000000000","172.17.0.3","172.17.0.2","ICMP","98","Echo (ping) request  id=0x0237, seq=1/256, ttl=64 (reply in 2)"
+"2","0.000132013","172.17.0.2","172.17.0.3","ICMP","98","Echo (ping) reply    id=0x0237, seq=1/256, ttl=64 (request in 1)"
+"3","1.023761117","172.17.0.3","172.17.0.2","ICMP","98","Echo (ping) request  id=0x0237, seq=2/512, ttl=64 (reply in 4)"
+"4","1.023820736","172.17.0.2","172.17.0.3","ICMP","98","Echo (ping) reply    id=0x0237, seq=2/512, ttl=64 (request in 3)"
+"5","2.047793314","172.17.0.3","172.17.0.2","ICMP","98","Echo (ping) request  id=0x0237, seq=3/768, ttl=64 (reply in 6)"
+"6","2.047874612","172.17.0.2","172.17.0.3","ICMP","98","Echo (ping) reply    id=0x0237, seq=3/768, ttl=64 (request in 5)"
+"7","3.071812836","172.17.0.3","172.17.0.2","ICMP","98","Echo (ping) request  id=0x0237, seq=4/1024, ttl=64 (reply in 8)"
+"8","3.071917370","172.17.0.2","172.17.0.3","ICMP","98","Echo (ping) reply    id=0x0237, seq=4/1024, ttl=64 (request in 7)"
+"9","4.095806036","172.17.0.3","172.17.0.2","ICMP","98","Echo (ping) request  id=0x0237, seq=5/1280, ttl=64 (reply in 10)"
+"10","4.095896130","172.17.0.2","172.17.0.3","ICMP","98","Echo (ping) reply    id=0x0237, seq=5/1280, ttl=64 (request in 9)"
+"11","5.023765744","02:42:ac:11:00:02","02:42:ac:11:00:03","ARP","42","Who has 172.17.0.3? Tell 172.17.0.2"
+"12","5.023792604","02:42:ac:11:00:03","02:42:ac:11:00:02","ARP","42","172.17.0.3 is at 02:42:ac:11:00:03"
+"13","5.119816801","172.17.0.3","172.17.0.2","ICMP","98","Echo (ping) request  id=0x0237, seq=6/1536, ttl=64 (reply in 14)"
+"14","5.119915447","172.17.0.2","172.17.0.3","ICMP","98","Echo (ping) reply    id=0x0237, seq=6/1536, ttl=64 (request in 13)"
+
+These are the packets captured using Wireshark when container1 was pinging container2.
+ICMP(Internet Control Message Protocol) echo request and reply packets are exchanged.
+ARP request is generated for resolving the destination MAC address.Once resolved ICMP request and reply messages are exchanged.
+The exchange of packets indicates that the destination is reachable from the host through the network.
+ICMP is technically a layer 3 protocol, so does not utilize UDP or TCP. 
+ICMP is directly coupled with the IP Protocol.
+
+
+
+
+
 -----------------------------------------------------------------------------------------------------------------------------
 
 #11 - Describe in detail what is the path the packets follow since they leave the interface inside container1 until they reach the interface inside container2
+
+Linux bridge:  virtual implementation of a physical switch inside of the Linux kernel. It forwards traffic basing itself                    on MAC addresses, which are in turn discovered dynamically by inspecting traffic.
+
+Network namespace :  is an isolated network stack with its own collection of interfaces, routes and firewall rules. Network namespaces are used to provide isolation between processes, analog to regular namespaces They ensure that two containers, even if they are on the same host, won’t be able to communicate with each other unless explicitly configured to do so.
+
+
+Creates a pair of veth.
+Moves one to the container namespace.
+Renames the container veth to eth0.
+Attaches the host veth to the docker0 bridge.
+Configure port forwarding in iptables.
+
+Linux bridge
+Containers connected to the bridge with veth pairs
+Each container gets its own IP and kernel networking namespace
+Containers can talk to each other and to the host via IP
+Outwards connectivity via IP forwarding and masquerading
+The bridge and containers use a private subnet
+
+    Each container has a separate network namespace. You can think of a network namespace as an instance of the entire networking stack: it contains network interfaces, it has it’s own iptables rules, it’s own routing table, ARP tables and so on.
+    Now, a container that is connected to the testnet overlay network, needs to have a network interface with an IP address inside testnet’s subnet — eth0. This is actually not an ordinary network interface (like eth0 in the host’s network namespace), but one end of a veth pair.
+    Veth pairs are virtual interfaces (meaning they do not represent a physical NIC) that are basically nothing more that FIFO queues. All the packets or frames that you put in one end, come out the other and vice versa. Veth pairs are used in this context as a channel to allow network traffic between a container’s network namespace and the network namespace of the overlay network - because traffic can not just cross namespaces.
+    When Docker creates a veth pair for each container, both ends are by default named vethsomething, but as it moves one end inside a container’s network namespace, it gets renamed to eth0 for convenient use by applications inside a container. It is actually not trivial to figure out which veth interface inside the overlay network’s namespace corresponds to a specific container’s eth0.
+    Wait, why does an overlay network have it’s own namespace? This is actually an elegant solution for providing isolation between networks. Traffic cannot travel between namespaces, remember? If we had all the host ends of the veth pairs and other components in the host’s network namespace, we would need some other mechanism to isolate traffic between the host and the overlay network and between different overlays.
+    The vxlan1 interface is another special interface (a lot of “special” stuff in an OS, where everything was supposed to be a file, eh?). 
+    It allows us to create a “tunnel” between two or more Docker hosts and send ethernet frames from a container on one host to a container running on another host by encapsulating the frames inside UDP packets on the host network.
+    By creating and configuring a VXLAN interface, you are telling the kernel to listen on UDP port 4789 in the host network namespace (although the vxlan1 interface is inside the overlay network’s namespace — weird, right?) for UDP datagrams containing VXLAN encapsulated ethernet frames from another host. The kernel then strips the VXLAN headers from these datagrams and sends the resulting frames out vxlan1 inside the overlay network’s namespace.
+    Sending frames into vxlan1 is the reverse of this process: the kernel adds encapsulation to the ethernet frames of the overlay network and sends them out as UDP datagrams from the host’s namespace. But how does it know to which Docker host should it send a particular frame? This is defined in the forwarding table of the bridge device br0.
+    A Linux bridge device is basically an ethernet switch implemented in software. Instead of cables, it has virtual network interfaces connected to it’s virtual ports. Inside an overlay network’s namespace, the br0 device acts as the glue that connects everything together — it allows traffic to flow between the virtual interfaces connected to it (the veth endpoints and vxlan1). 
+    Just like a physical switch, a bridge can learn the MAC addresses reachable from each of it’s ports by monitoring ARP replies or by having static forwarding table entries configured. We’ll have an in depth look into the bridge’s forwarding table a little bit later.
+
+A1 would determine that the target IP address is inside it’s own subnet (on the same LAN) and decide to send out an ethernet frame addressed directly to the destination. It looks inside it’s ARP cache if it already has the MAC address corresponding to the destination IP.
+If it doesn’t find a corresponding MAC in the ARP cache, it sends out an ARP request (basically saying “Who has this IP, please respond”).
+This ARP request gets propagated through the veth pair to br0. Br0 floods it out all it’s virtual ports.
+Once the ARP request reaches an interface with the correct IP address, this interface will send out an ARP reply to the MAC address originating the ARP request. This ARP reply travels through br0 as well. Br0 “takes a note” of this ARP reply and the virtual port it entered from — it now knows that the MAC address sending the ARP reply must be reachable from that virtual port. It reconfigures it’s forwarding table to send all future frames destined to that MAC address out the virtual port, where the ARP reply came from.
+For our example (A1 initiating communication with B1), after the ARP exchange, br0 would know that the MAC 02:42:0a:00:00:03 is reachable from veth32.
 -----------------------------------------------------------------------------------------------------------------------------
 
 #12 - Imagine, container1 and container2 are in different VMs or servers. What do you think would change from what you described in #11?
+
+Managed common IP space at the container level
+Assigns /24 subnet to each host
+Inserts routes to each host /24 into the routing table of each host
+Main implementations
+Calico
+Flannel
+Romana
+Kuryr
+
+Overlay approach
+Encapsulates multiple networks over the physical networking
+UDP
+vxlan
+geneve
+GRE
+Connect containers to virtualnetworks
+Main projects
+Docker’s native overlay
+Flannel
+Weave
+Kuryr
+  OVS (OVN,Dragonflow)
+  MidoNet
+  PLUMgrid
+  
+For containers residing on remote Docker hosts, the vxlan1 interface will send out ARP replies on their behalf. Br0 “learns” from these ARP replies that it should forward frames destined for remote containers to vxlan1, that then carries out all the encapsulation and delivery magic to the correct remote hosts. How does it know which containers are on which Docker hosts? 
+This is defined in the forwarding table of vxlan1. Entries are updated in the forwarding tables of all vxlan1 interfaces (on all Docker hosts in an overlay network) whenever a container is created or removed. The exact details are beyond the scope of this post, we’ll just consider the entries managed by the Docker daemon.
 -----------------------------------------------------------------------------------------------------------------------------
 
 #13 - Push this file with the answers to your private github repository
